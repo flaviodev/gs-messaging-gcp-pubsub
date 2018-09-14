@@ -7,7 +7,12 @@
 <body>
 <div name="formDiv">
   <form action="/publishMessage" method="post">
-    Publish message: <input type="text" name="message" /> <input type="submit" value="Publish!"/>
+ 	Client ID: <select name="clientId" >
+ 		<option value="001">Client 001</option>  
+ 		<option value="002">Client 002</option>
+ 	</select> 
+    Publish message: <input type="text" name="message" /> 
+    <input type="submit" value="Publish!"/>
   </form>
 </div>
 </body>
