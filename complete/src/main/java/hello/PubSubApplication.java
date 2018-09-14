@@ -10,7 +10,9 @@ import org.springframework.cloud.gcp.pubsub.integration.AckMode;
 import org.springframework.cloud.gcp.pubsub.integration.inbound.PubSubInboundChannelAdapter;
 import org.springframework.cloud.gcp.pubsub.integration.outbound.PubSubMessageHandler;
 import org.springframework.cloud.gcp.pubsub.support.GcpPubSubHeaders;
+import org.springframework.cloud.gcp.pubsub.support.converter.JacksonPubSubMessageConverter;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.integration.annotation.GatewayHeader;
 import org.springframework.integration.annotation.MessagingGateway;
 import org.springframework.integration.annotation.ServiceActivator;
@@ -18,7 +20,9 @@ import org.springframework.integration.channel.DirectChannel;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.handler.annotation.Header;
+import org.springframework.util.concurrent.ListenableFutureCallback;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.pubsub.v1.AckReplyConsumer;
 
 @SpringBootApplication
@@ -42,6 +46,10 @@ public class PubSubApplication {
 		adapter.setOutputChannel(inputChannel);
 		adapter.setAckMode(AckMode.MANUAL);
 
+		adapter.setPayloadType(CustomMessage.class);
+		ObjectMapper mapper = new Jackson2ObjectMapperBuilder().build();
+		adapter.setMessageConverter(new JacksonPubSubMessageConverter(mapper));
+
 		return adapter;
 	}
 
@@ -52,6 +60,7 @@ public class PubSubApplication {
 			LOGGER.info("clientId: " + message.getHeaders().get("clientId"));
 			LOGGER.info("orgId: " + message.getHeaders().get("orgId"));
 			LOGGER.info("message: " + message.getPayload());
+
 			AckReplyConsumer consumer = (AckReplyConsumer) message.getHeaders().get(GcpPubSubHeaders.ACKNOWLEDGEMENT);
 			consumer.ack();
 		};
@@ -60,12 +69,26 @@ public class PubSubApplication {
 	@Bean
 	@ServiceActivator(inputChannel = "pubsubOutputChannel")
 	public MessageHandler messageSender(PubSubOperations pubsubTemplate) {
-		return new PubSubMessageHandler(pubsubTemplate, "testTopic");
+
+		PubSubMessageHandler adapter = new PubSubMessageHandler(pubsubTemplate, "testTopic");
+		adapter.setPublishCallback(new ListenableFutureCallback<String>() {
+			@Override
+			public void onFailure(Throwable ex) {
+				LOGGER.info("There was an error sending the message.");
+			}
+
+			@Override
+			public void onSuccess(String result) {
+				LOGGER.info("Message was sent successfully.");
+			}
+		});
+
+		return adapter;
 	}
 
 	@MessagingGateway(defaultRequestChannel = "pubsubOutputChannel", defaultHeaders = @GatewayHeader(name = "orgId", value = "1"))
 	public interface PubsubOutboundGateway {
 
-		void sendToPubsub(@Header("clientId") String clientId, String text);
+		void sendToPubsub(@Header("clientId") String clientId, Object payload);
 	}
 }
